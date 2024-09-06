@@ -27,6 +27,7 @@ from liger_kernel.transformers.layer_norm import LigerLayerNorm
     "dtype, atol, rtol",
     [
         (torch.float32, 1e-5, 1e-5),
+        (torch.bfloat16, 2e-1, 2e-2),
     ],
 )
 def test_liger_layer_norm(batch_size, seq_len, hidden_size, dtype, atol, rtol):

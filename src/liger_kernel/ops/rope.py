@@ -161,6 +161,45 @@ def rope_forward(q, k, cos, sin):
     )
     return q.transpose(1, 2), k.transpose(1, 2), cos, sin
 
+def rope_forward_nonetranspose(q, k, cos, sin):
+
+    batch_size, seq_len, n_q_head, head_dim = q.shape
+    n_kv_head = k.shape[2]
+    pad_hd = triton.next_power_of_2(head_dim)
+    pad_n_q_head = triton.next_power_of_2(n_q_head)
+    pad_n_kv_head = triton.next_power_of_2(n_kv_head)
+    BLOCK_SIZE = max(pad_n_q_head, pad_n_kv_head)
+
+    n_row = batch_size * seq_len
+
+    # ensure tensors passed into the kernel are contiguous. It will be no-op if they are already contiguous
+    q = q.contiguous()
+    k = k.contiguous()
+    cos = cos.contiguous()
+    sin = sin.contiguous()
+
+    _triton_rope[(n_row,)](
+        q,
+        q.stride(1),
+        k,
+        k.stride(1),
+        cos,
+        cos.stride(-2),
+        sin,
+        sin.stride(-2),
+        seq_len,
+        batch_size,
+        n_q_head,
+        n_kv_head,
+        head_dim,
+        pad_n_q_head,
+        pad_n_kv_head,
+        pad_hd,
+        BLOCK_SIZE=BLOCK_SIZE,
+        BACKWARD_PASS=False,
+    )
+    return q, k, cos, sin
+
 
 def rope_backward(dq, dk, cos, sin):
     dq = dq.transpose(1, 2)
@@ -203,6 +242,45 @@ def rope_backward(dq, dk, cos, sin):
     return dq.transpose(1, 2), dk.transpose(1, 2)
 
 
+def rope_backward_nonetranspose(dq, dk, cos, sin):
+
+    batch_size, seq_len, n_q_head, head_dim = dq.shape
+    n_kv_head = dk.shape[2]
+    pad_hd = triton.next_power_of_2(head_dim)
+    pad_n_q_head = triton.next_power_of_2(n_q_head)
+    pad_n_kv_head = triton.next_power_of_2(n_kv_head)
+    BLOCK_SIZE = max(pad_n_q_head, pad_n_kv_head)
+
+    n_row = batch_size * seq_len
+
+    # ensure dq and dk are contiguous
+    dq = dq.contiguous()
+    dk = dk.contiguous()
+
+    # backward is similar to forward except swapping few ops
+    _triton_rope[(n_row,)](
+        dq,
+        dq.stride(1),
+        dk,
+        dk.stride(1),
+        cos,
+        cos.stride(-2),
+        sin,
+        sin.stride(-2),
+        seq_len,
+        batch_size,
+        n_q_head,
+        n_kv_head,
+        head_dim,
+        pad_n_q_head,
+        pad_n_kv_head,
+        pad_hd,
+        BLOCK_SIZE=BLOCK_SIZE,
+        BACKWARD_PASS=True,
+    )
+    return dq, dk
+
+
 class LigerRopeFunction(torch.autograd.Function):
     """
     Triton implementation of the Rotary Positional Embedding (RoPE) operation. Please note that
@@ -238,4 +316,42 @@ class LigerRopeFunction(torch.autograd.Function):
 
         cos, sin = ctx.saved_tensors
         dq, dk = rope_backward(dq, dk, cos, sin)
+        return dq, dk, None, None, None, None
+
+
+class LigerRopeFunctionNoneTranspose(torch.autograd.Function):
+    """
+    Triton implementation of the Rotary Positional Embedding (RoPE) operation. Please note that
+    this implements the HuggingFace Llama & Mistral version, whose rotation matrix is slightly different
+    than the original RoPE paper.
+
+    Please find the corresponding HuggingFace implementation here:
+    https://github.com/huggingface/transformers/blob/v4.40.2/src/transformers/models/llama/modeling_llama.py#L184
+
+    For more details about the rotation matrix used here, please refer to:
+    https://discuss.huggingface.co/t/is-llama-rotary-embedding-implementation-correct/44509/2
+    """
+
+    @staticmethod
+    def forward(ctx, q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
+        """
+        q size: (bsz, seq_len, n_q_head, head_dim)
+        k size: (bsz, seq_len, n_kv_head, head_dim)
+        cos size: (1, seq_len, head_dim)
+        sin size: (1, seq_len, head_dim)
+        """
+        q, k, cos, sin = rope_forward_nonetranspose(q, k, cos, sin)
+        ctx.save_for_backward(cos, sin)
+        return q, k
+
+    def backward(ctx, dq, dk):
+        """
+        dq size: (bsz, seq_len, n_q_head, head_dim)
+        dk size: (bsz, seq_len, n_kv_head, head_dim)
+        cos size: (1, seq_len, head_dim)
+        sin size: (1, seq_len, head_dim)
+        """
+
+        cos, sin = ctx.saved_tensors
+        dq, dk = rope_backward_nonetranspose(dq, dk, cos, sin)
         return dq, dk, None, None, None, None

@@ -7,13 +7,17 @@ from transformers.models.llama.modeling_llama import (
     apply_rotary_pos_emb,
 )
 
-from liger_kernel.ops.rope import LigerRopeFunction
+from liger_kernel.ops.rope import LigerRopeFunction, LigerRopeFunctionNoneTranspose
 from liger_kernel.transformers.functional import liger_rope
 from liger_kernel.transformers.rope import liger_rotary_pos_emb
 
 SLEEP_SECONDS = 0.1
 
 
+@pytest.mark.parametrize(
+    "not_transpose",
+    [True, False]
+)
 @pytest.mark.parametrize(
     "bsz, seq_len, num_q_heads, num_kv_heads, head_dim",
     [
@@ -44,7 +48,7 @@ SLEEP_SECONDS = 0.1
     ],
 )
 def test_correctness(
-    bsz, seq_len, num_q_heads, num_kv_heads, head_dim, dtype, atol, rtol
+    bsz, seq_len, num_q_heads, num_kv_heads, head_dim, dtype, not_transpose, atol, rtol
 ):
     rotary_emb = LlamaRotaryEmbedding(head_dim, device="cuda")
 
@@ -71,7 +75,11 @@ def test_correctness(
 
     # validate forward pass
     hf_q, hf_k = apply_rotary_pos_emb(q1, k1, cos, sin, pos_ids)
-    tt_q, tt_k = liger_rotary_pos_emb(q2, k2, cos, sin)
+    if not_transpose:
+        tt_q, tt_k = liger_rotary_pos_emb(q2.transpose(1, 2), k2.transpose(1, 2), cos, sin, not_transpose=not_transpose)
+        tt_q, tt_k = tt_q.transpose(1, 2), tt_k.transpose(1, 2)
+    else:
+        tt_q, tt_k = liger_rotary_pos_emb(q2, k2, cos, sin, not_transpose=not_transpose)
     assert torch.allclose(hf_q, tt_q, atol=atol, rtol=rtol)
     assert torch.allclose(hf_k, tt_k, atol=atol, rtol=rtol)
 
@@ -93,6 +101,10 @@ def test_correctness(
 
 
 @pytest.mark.parametrize(
+    "not_transpose",
+    [True, False]
+)
+@pytest.mark.parametrize(
     "bsz, seq_len, num_q_heads, num_kv_heads, head_dim",
     [
         (1, 2, 2, 2, 8),
@@ -109,7 +121,7 @@ def test_correctness(
     ],
 )
 def test_functional_correctness(
-    bsz, seq_len, num_q_heads, num_kv_heads, head_dim, dtype, atol, rtol
+    bsz, seq_len, num_q_heads, num_kv_heads, head_dim, dtype, not_transpose, atol, rtol
 ):
     _q = torch.randn((bsz, num_q_heads, seq_len, head_dim), device="cuda", dtype=dtype)
     _k = torch.randn((bsz, num_kv_heads, seq_len, head_dim), device="cuda", dtype=dtype)
@@ -126,7 +138,11 @@ def test_functional_correctness(
     cos, sin = rotary_emb(k1, pos_ids)
 
     functional_q, functional_k = liger_rope(q1, k1, cos, sin)
-    class_q, class_k = LigerRopeFunction.apply(q2, k2, cos, sin)
+    if not_transpose:
+        class_q, class_k = LigerRopeFunctionNoneTranspose.apply(q2.transpose(1, 2), k2.transpose(1, 2), cos, sin)
+        class_q, class_k = class_q.transpose(1, 2), class_k.transpose(1, 2)
+    else:
+        class_q, class_k = LigerRopeFunction.apply(q2, k2, cos, sin)
 
     assert torch.allclose(functional_q, class_q, atol=atol, rtol=rtol)
     assert torch.allclose(functional_k, class_k, atol=atol, rtol=rtol)

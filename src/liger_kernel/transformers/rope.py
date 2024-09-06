@@ -1,7 +1,7 @@
-from liger_kernel.ops.rope import LigerRopeFunction
+from liger_kernel.ops.rope import LigerRopeFunction, LigerRopeFunctionNoneTranspose
 
 
-def liger_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
+def liger_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1, not_transpose=None):
     """
     Applies Rotary Positional Embedding (RoPE) operation to query and key states.
 
@@ -16,5 +16,7 @@ def liger_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
     Returns:
         Tuple[torch.Tensor, torch.Tensor]: The query and key tensors after applying the RoPE operation.
     """
-
+    if not_transpose:
+        return LigerRopeFunctionNoneTranspose.apply(q, k, cos, sin, position_ids, unsqueeze_dim)
     return LigerRopeFunction.apply(q, k, cos, sin, position_ids, unsqueeze_dim)
+    
