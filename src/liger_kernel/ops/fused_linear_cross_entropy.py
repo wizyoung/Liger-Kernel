@@ -173,7 +173,7 @@ def fused_linear_cross_entropy_backward(
 class LigerFusedLinearCrossEntropyFunction(torch.autograd.Function):
     @staticmethod
     def forward(
-        ctx, _input, weight, target, bias=None, ignore_index=-100, label_smoothing=0.0
+        ctx, _input, weight, target, bias=None, ignore_index=-100, label_smoothing=0.0, softcap_value=None
     ):
         """
         Fusing the last linear layer with cross-entropy loss
