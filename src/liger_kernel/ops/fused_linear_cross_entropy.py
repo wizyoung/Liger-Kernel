@@ -54,7 +54,7 @@ def fused_linear_cross_entropy_forward(
         logits_chunk = _input_chunk @ weight.t()  # chunk_size x V
         if bias is not None:
             logits_chunk = logits_chunk + bias
-        if softcap_value is None:
+        if softcap_value is not None:
             logits_chunk = torch.tanh(logits_chunk / softcap_value) * softcap_value
         target_chunk = target[start_idx:end_idx]  # chunk_size,
 
@@ -209,4 +209,4 @@ class LigerFusedLinearCrossEntropyFunction(torch.autograd.Function):
         grad_input, grad_weight, grad_bias = fused_linear_cross_entropy_backward(
             grad_output, grad_input, grad_weight, grad_bias
         )
-        return (grad_input, grad_weight, None, grad_bias, None, None)
+        return (grad_input, grad_weight, None, grad_bias, None, None, None)
