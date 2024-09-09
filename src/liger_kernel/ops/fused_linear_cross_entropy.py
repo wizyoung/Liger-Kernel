@@ -13,7 +13,7 @@ MAX_FUSED_SIZE = 65536 // 2
 
 
 def fused_linear_cross_entropy_forward(
-    _input, weight, target, bias=None, ignore_index=-100, label_smoothing=0.0
+    _input, weight, target, bias=None, ignore_index=-100, label_smoothing=0.0, softcap_value=None
 ):
     dtype = (
         torch.get_autocast_gpu_dtype() if torch.is_autocast_enabled() else _input.dtype
@@ -54,6 +54,8 @@ def fused_linear_cross_entropy_forward(
         logits_chunk = _input_chunk @ weight.t()  # chunk_size x V
         if bias is not None:
             logits_chunk = logits_chunk + bias
+        if softcap_value is None:
+            logits_chunk = torch.tanh(logits_chunk / softcap_value) * softcap_value
         target_chunk = target[start_idx:end_idx]  # chunk_size,
 
         n_rows = logits_chunk.shape[0]
@@ -191,7 +193,7 @@ class LigerFusedLinearCrossEntropyFunction(torch.autograd.Function):
         ignore_index: the index to ignore in the target
         """
         loss, grad_input, grad_weight, grad_bias = fused_linear_cross_entropy_forward(
-            _input, weight, target, bias, ignore_index, label_smoothing
+            _input, weight, target, bias, ignore_index, label_smoothing, softcap_value
         )
         # downcast to dtype and store for backward
         ctx.save_for_backward(
@@ -207,4 +209,4 @@ class LigerFusedLinearCrossEntropyFunction(torch.autograd.Function):
         grad_input, grad_weight, grad_bias = fused_linear_cross_entropy_backward(
             grad_output, grad_input, grad_weight, grad_bias
         )
-        return (grad_input, grad_weight, None, grad_bias, None)
+        return (grad_input, grad_weight, None, grad_bias, None, None)

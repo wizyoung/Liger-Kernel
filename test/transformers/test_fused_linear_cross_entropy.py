@@ -43,9 +43,7 @@ class TorchLMHeadCE(torch.nn.Module):
     def forward(self, x, y, softcap_value=None):
         logits = self.lin(x)
         if softcap_value is not None:
-            logits = logits / softcap_value
-            logits = torch.tanh(logits)
-            logits = logits * softcap_value
+            logits = torch.tanh(logits / softcap_value) * softcap_value
         return self.ce_loss(logits, y)
 
 
@@ -67,10 +65,7 @@ class LigerLMHeadCE(torch.nn.Module):
         )
 
     def forward(self, x, y, softcap_value=None):
-        final_logit_softcap_params = None
-        if softcap_value is not None:
-            final_logit_softcap_params = {'softcap_act': 'tanh', 'softcap_value': softcap_value}
-        return self.ce_loss(self.lin.weight, x, y, self.lin.bias, final_logit_softcap_params)
+        return self.ce_loss(self.lin.weight, x, y, self.lin.bias, softcap_value=softcap_value)
 
 
 #############################################################################
@@ -180,11 +175,8 @@ def test_correctness_functional(B, T, H, V, scalar, dtype, bias, softcap_value, 
     weight = torch.randn(V, H, device=device, dtype=dtype)
     bias = torch.randn(V, device=device, dtype=dtype) if bias else None
 
-    final_logit_softcap_params = None
-    if softcap_value is not None:
-        final_logit_softcap_params = {'softcap_act': 'tanh', 'softcap_value': softcap_value}
-    y1 = liger_fused_linear_cross_entropy(x1, weight, target, bias, final_logit_softcap_params)
-    y2 = LigerFusedLinearCrossEntropyFunction.apply(x2, weight, target, bias, final_logit_softcap_params)
+    y1 = liger_fused_linear_cross_entropy(x1, weight, target, bias, softcap_value=softcap_value)
+    y2 = LigerFusedLinearCrossEntropyFunction.apply(x2, weight, target, bias, softcap_value=softcap_value)
 
     assert torch.allclose(y1, y2, atol=atol, rtol=rtol)
 
