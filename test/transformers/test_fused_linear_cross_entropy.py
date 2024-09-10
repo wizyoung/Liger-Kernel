@@ -40,10 +40,8 @@ class TorchLMHeadCE(torch.nn.Module):
             ignore_index=ignore_index, reduction="mean"
         )
 
-    def forward(self, x, y, softcap_value=None):
+    def forward(self, x, y):
         logits = self.lin(x)
-        if softcap_value is not None:
-            logits = torch.tanh(logits / softcap_value) * softcap_value
         return self.ce_loss(logits, y)
 
 
@@ -64,8 +62,8 @@ class LigerLMHeadCE(torch.nn.Module):
             ignore_index=ignore_index, reduction="mean"
         )
 
-    def forward(self, x, y, softcap_value=None):
-        return self.ce_loss(self.lin.weight, x, y, self.lin.bias, softcap_value=softcap_value)
+    def forward(self, x, y):
+        return self.ce_loss(self.lin.weight, x, y, self.lin.bias)
 
 
 #############################################################################
@@ -73,11 +71,6 @@ class LigerLMHeadCE(torch.nn.Module):
 #############################################################################
 
 
-@pytest.mark.parametrize(
-    "softcap_value",
-    [None]
-    # [None, 10.0, 30.0],
-)
 @pytest.mark.parametrize(
     "B, T, H, V",
     [
@@ -97,7 +90,7 @@ class LigerLMHeadCE(torch.nn.Module):
     ],
 )
 @pytest.mark.parametrize("bias", [True, False])
-def test_correctness(B, T, H, V, scalar, dtype, bias, softcap_value, atol, rtol):
+def test_correctness(B, T, H, V, scalar, dtype, bias, atol, rtol):
     device = "cuda"
     torch_lm_head_ce = TorchLMHeadCE(H=H, V=V, bias=bias, dtype=dtype).to(device)
     liger_lm_head_ce = LigerLMHeadCE(H=H, V=V, bias=bias, dtype=dtype).to(device)
@@ -118,8 +111,8 @@ def test_correctness(B, T, H, V, scalar, dtype, bias, softcap_value, atol, rtol)
 
     target = torch.randint(0, V, (B * T,), device=device, dtype=torch.long)
 
-    output1 = torch_lm_head_ce(_input1, target, softcap_value)
-    output2 = liger_lm_head_ce(_input2, target, softcap_value)
+    output1 = torch_lm_head_ce(_input1, target)
+    output2 = liger_lm_head_ce(_input2, target)
 
     assert_verbose_allclose(output1, output2, atol=atol, rtol=rtol)
 
@@ -143,11 +136,7 @@ def test_correctness(B, T, H, V, scalar, dtype, bias, softcap_value, atol, rtol)
             rtol=rtol,
         )
 
-@pytest.mark.parametrize(
-    "softcap_value",
-    [None]
-    # [None, 30.0],
-)
+
 @pytest.mark.parametrize(
     "B, T, H, V",
     [
@@ -164,7 +153,7 @@ def test_correctness(B, T, H, V, scalar, dtype, bias, softcap_value, atol, rtol)
     ],
 )
 @pytest.mark.parametrize("bias", [True, False])
-def test_correctness_functional(B, T, H, V, scalar, dtype, bias, softcap_value, atol, rtol):
+def test_correctness_functional(B, T, H, V, scalar, dtype, bias, atol, rtol):
     device = "cuda"
 
     _input = torch.randn(B * T, H, device=device, dtype=dtype) * scalar
@@ -176,8 +165,8 @@ def test_correctness_functional(B, T, H, V, scalar, dtype, bias, softcap_value, 
     weight = torch.randn(V, H, device=device, dtype=dtype)
     bias = torch.randn(V, device=device, dtype=dtype) if bias else None
 
-    y1 = liger_fused_linear_cross_entropy(x1, weight, target, bias, -100, 0.0, softcap_value)
-    y2 = LigerFusedLinearCrossEntropyFunction.apply(x2, weight, target, bias, -100, 0.0, softcap_value)
+    y1 = liger_fused_linear_cross_entropy(x1, weight, target, bias)
+    y2 = LigerFusedLinearCrossEntropyFunction.apply(x2, weight, target, bias)
 
     assert torch.allclose(y1, y2, atol=atol, rtol=rtol)
 

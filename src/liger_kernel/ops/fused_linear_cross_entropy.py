@@ -57,8 +57,6 @@ def fused_linear_cross_entropy_forward(
         logits_chunk = _input_chunk @ weight.t()  # chunk_size x V
         if bias is not None:
             logits_chunk = logits_chunk + bias
-        if softcap_value is not None:
-            logits_chunk = torch.tanh(logits_chunk / softcap_value) * softcap_value
         target_chunk = target[start_idx:end_idx]  # chunk_size,
 
         n_rows = logits_chunk.shape[0]
