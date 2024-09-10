@@ -295,6 +295,7 @@ def run_benchmarks(
                 y_values_80 = []
 
                 for x in x_values:
+                    print(f'{extra_benchmark_config} - {kernel_operation_mode} - {kernel_provider} - {x}')
                     single_benchmark_run_input = SingleBenchmarkRunInput(
                         x=x,
                         kernel_provider=kernel_provider,
