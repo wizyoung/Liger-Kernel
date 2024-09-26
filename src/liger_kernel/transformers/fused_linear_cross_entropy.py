@@ -11,5 +11,11 @@ class LigerFusedLinearCrossEntropyLoss(CrossEntropyLoss):
 
     def forward(self, lin_weight, _input, target, bias=None, label_smoothing=0.0):
         return LigerFusedLinearCrossEntropyFunction.apply(
-            _input, lin_weight, target, bias, self.ignore_index, label_smoothing
+            _input,
+            lin_weight,
+            target,
+            bias,
+            self.ignore_index,
+            self.label_smoothing,
+            self.reduction,
         )
