@@ -7,9 +7,6 @@ import transformers
 from packaging import version
 from transformers import PreTrainedModel
 
-from torch import nn
-from transformers import PretrainedConfig, PreTrainedModel
-
 from liger_kernel.transformers.cross_entropy import LigerCrossEntropyLoss
 from liger_kernel.transformers.geglu import LigerGEGLUMLP
 from liger_kernel.transformers.layer_norm import LigerLayerNorm
@@ -242,38 +239,6 @@ def apply_liger_kernel_to_mllama(
                     _patch_layer_norm_module(layer.input_layernorm)
                     _patch_layer_norm_module(layer.post_attention_layernorm)
 
-    if model is not None:
-        # The model instance already exists, so we need to additionally patch the
-        # instance variables that reference already-instantiated modules (e.g. LlamaRMSNorm or LlamaMLP)
-        config: PretrainedConfig = model.config
-
-        if hasattr(model, "model"):
-            # The case for LlamaForCausalLM or LlamaForSequenceClassification, for example
-            base_model = model.model
-        elif hasattr(model, "transformer"):
-            # LlamaForQuestionAnswering uses "transformer" instead of "model"
-            base_model = model.transformer
-        else:
-            # Direct LlamaModel
-            base_model = model
-
-        torch_dtype = config.torch_dtype
-        if rms_norm:
-            base_model.norm = LigerRMSNorm(
-                config.hidden_size, eps=config.rms_norm_eps
-            ).to(torch_dtype)
-
-        for decoder_layer in base_model.layers:
-            if swiglu:
-                decoder_layer.mlp = LigerSwiGLUMLP(config).to(torch_dtype)
-            if rms_norm:
-                decoder_layer.input_layernorm = LigerRMSNorm(
-                    config.hidden_size, eps=config.rms_norm_eps
-                ).to(torch_dtype)
-                decoder_layer.post_attention_layernorm = LigerRMSNorm(
-                    config.hidden_size, eps=config.rms_norm_eps
-                ).to(torch_dtype)
-
 
 def apply_liger_kernel_to_mistral(
     rope: bool = True,
@@ -443,11 +408,6 @@ def apply_liger_kernel_to_gemma(
         _patch_rms_norm_module, casting_mode="gemma", offset=1.0
     )
 
-    # https://github.com/huggingface/transformers/blob/v4.44.2/src/transformers/models/gemma/modeling_gemma.py#L109
-    LigerRMSNormForGemma = partial(
-        LigerRMSNorm, offset=1.0, init_fn="zeros", casting_mode="gemma"
-    )
-
     if rope:
         modeling_gemma.apply_rotary_pos_emb = liger_rotary_pos_emb
     if rms_norm:
@@ -482,35 +442,6 @@ def apply_liger_kernel_to_gemma(
                 _patch_rms_norm_module_for_gemma(decoder_layer.input_layernorm)
                 _patch_rms_norm_module_for_gemma(decoder_layer.post_attention_layernorm)
 
-    if model is not None:
-        # The model instance already exists, so we need to additionally patch the
-        # instance variables that reference already-instantiated modules
-        config: PretrainedConfig = model.config
-
-        if hasattr(model, "model"):
-            # The case for GemmaForCausalLM, GemmaForTokenClassification for example
-            base_model = model.model
-        else:
-            # Direct GemmaModel
-            base_model = model
-
-        torch_dtype = config.torch_dtype
-        if rms_norm:
-            base_model.norm = LigerRMSNormForGemma(
-                config.hidden_size, eps=config.rms_norm_eps
-            ).to(torch_dtype)
-
-        for decoder_layer in base_model.layers:
-            if geglu:
-                decoder_layer.mlp = LigerGEGLUMLP(config).to(torch_dtype)
-            if rms_norm:
-                decoder_layer.input_layernorm = LigerRMSNormForGemma(
-                    config.hidden_size, eps=config.rms_norm_eps
-                ).to(torch_dtype)
-                decoder_layer.post_attention_layernorm = LigerRMSNormForGemma(
-                    config.hidden_size, eps=config.rms_norm_eps
-                ).to(torch_dtype)
-
 
 def apply_liger_kernel_to_gemma2(
     rope: bool = True,
@@ -541,7 +472,6 @@ def apply_liger_kernel_to_gemma2(
         _patch_rms_norm_module, offset=1.0, casting_mode="gemma"
     )
 
-    LigerRMSNormForGemma2 = partial(LigerRMSNorm, offset=1.0, init_fn="zeros")
     if rope:
         modeling_gemma2.apply_rotary_pos_emb = liger_rotary_pos_emb
     if rms_norm:
@@ -788,35 +718,6 @@ def apply_liger_kernel_to_phi3(
             if rms_norm:
                 _patch_rms_norm_module(decoder_layer.input_layernorm)
                 _patch_rms_norm_module(decoder_layer.post_attention_layernorm)
-
-    if model is not None:
-        # The model instance already exists, so we need to additionally patch the
-        # instance variables that reference already-instantiated modules
-        config: PretrainedConfig = model.config
-
-        if hasattr(model, "model"):
-            # The case for Phi3ForCausalLM, Phi3ForTokenClassification for example
-            base_model = model.model
-        else:
-            # Direct Phi3Model
-            base_model = model
-
-        torch_dtype = config.torch_dtype
-        if rms_norm:
-            base_model.norm = LigerRMSNorm(
-                config.hidden_size, eps=config.rms_norm_eps
-            ).to(torch_dtype)
-
-        for decoder_layer in base_model.layers:
-            if swiglu:
-                decoder_layer.mlp = LigerPhi3SwiGLUMLP(config).to(torch_dtype)
-            if rms_norm:
-                decoder_layer.input_layernorm = LigerRMSNorm(
-                    config.hidden_size, eps=config.rms_norm_eps
-                ).to(torch_dtype)
-                decoder_layer.post_attention_layernorm = LigerRMSNorm(
-                    config.hidden_size, eps=config.rms_norm_eps
-                ).to(torch_dtype)
 
 
 # Model type corresponds to the keys defined in transformers/models/auto/modeling_auto.py
